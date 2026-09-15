@@ -1,53 +1,57 @@
 ---
-PLAN: "feat: blob + transaction conformance clauses for vector storage"
+PLAN: "feat: cláusulas de conformance para blobs y transacciones"
 TAG: v0.1.0
 EXECUTOR: unassigned
 REVIEWER: none
 ---
 
-> Part of the browser-native semantic search effort. Master index:
-> https://github.com/webtyp/agent/blob/main/docs/PLAN.md — decisions **D1** and **D2**
-> there are the rationale for everything below.
+> Parte del esfuerzo de búsqueda semántica nativa en el navegador. Índice maestro:
+> https://github.com/webtyp/agent/blob/main/docs/PLAN.md — las decisiones **D1** y **D2** de
+> ahí son la justificación de todo lo de abajo.
+>
+> **Nota de idioma:** la prosa va en español; los bloques de código mantienen sus
+> comentarios en inglés, como el resto del código fuente de este repositorio.
 
-# Plan — prove that a backend can carry a vector
+# Plan — demostrar que un backend puede transportar un vector
 
-## Why
+## Por qué
 
-Storing embeddings means storing `[]byte` and writing many rows atomically. This
-repository already has **both contracts**; what it does not have is anything that
-proves a backend honours them.
+Guardar embeddings significa guardar `[]byte` y escribir muchas filas atómicamente. Este
+repositorio ya tiene **ambos contratos**; lo que no tiene es nada que demuestre que un
+backend los honra.
 
-- `ScanAny` (`scan.go`) already handles `*[]byte` completely, in both the NULL and
-  non-NULL paths. **No change needed there.**
-- `TxExecutor` / `TxBoundExecutor` (`tx.go`) already describe transactions as an
-  optional, type-asserted capability. **No change needed there either.**
-- But `conformance.Widget` (`conformance/model.go`) has only text/int/bool columns, and
-  `conformance.Run` has thirteen clauses, none of which writes a byte slice or opens a
-  transaction.
+- `ScanAny` (`scan.go`) ya maneja `*[]byte` por completo, tanto en el camino NULL como en el
+  no-NULL. **No hace falta cambiar nada ahí.**
+- `TxExecutor` / `TxBoundExecutor` (`tx.go`) ya describen las transacciones como una
+  capacidad opcional con type assertion. **Tampoco hace falta cambiar nada ahí.**
+- Pero `conformance.Widget` (`conformance/model.go`) tiene solo columnas de texto, entero y
+  booleano, y `conformance.Run` tiene trece cláusulas, ninguna de las cuales escribe un
+  slice de bytes ni abre una transacción.
 
-The consequence is concrete: `indexdb` will **crash** — not error — on the first blob
-write (`js.ValueOf` panics on `[]byte`, and TinyGo wasm has no `recover()`), and today
-the conformance suite passes it anyway. A contract nothing tests is not a contract.
+La consecuencia es concreta: `indexdb` va a **crashear** — no dar error — en la primera
+escritura de blob (`js.ValueOf` hace pánico con `[]byte`, y TinyGo wasm no tiene
+`recover()`), y hoy la suite de conformance lo aprueba igual. Un contrato que nada testea no
+es un contrato.
 
-## What does NOT change
+## Lo que NO cambia
 
 `scan.go`, `executor.go`, `conn.go`, `query.go`, `conditions.go`, `compiler.go`,
-`execution_plan.go` and `tx.go` are **untouched**. This plan adds test surface and one
-new conformance record; it changes no production interface.
+`execution_plan.go` y `tx.go` quedan **intactos**. Este plan agrega superficie de test y un
+record de conformance nuevo; no cambia ninguna interfaz de producción.
 
-In particular, **no streaming-scan API is added.** It would be the obvious thing to reach
-for — a kNN query scans every candidate — but decision **D2** stores vectors in shards of
-1024, so `vectordb`'s hot read path is a handful of large rows from one table, which
-`Query`/`Rows` already serves. Adding a scan API for a caller that does not need one
-would be speculative.
+En particular, **no se agrega ninguna API de scan en streaming.** Sería lo obvio a lo que
+recurrir — una consulta kNN recorre todos los candidatos — pero la decisión **D2** guarda los
+vectores en shards de 1024, así que el camino caliente de lectura de `vectordb` es un puñado
+de filas grandes de una tabla, que `Query`/`Rows` ya sirve. Agregar una API de scan para un
+llamador que no la necesita sería especulativo.
 
-`conformance.Widget` is **not** extended. Adding a blob column to the canonical record
-would break every backend's table setup at once, including backends outside this plan's
-scope. The new clauses use their own record.
+`conformance.Widget` **no** se extiende. Agregarle una columna blob al record canónico
+rompería el setup de tablas de todos los backends a la vez, incluidos backends fuera del
+alcance de este plan. Las cláusulas nuevas usan su propio record.
 
-## Changes
+## Cambios
 
-### 1. `conformance/model.go` — a second canonical record
+### 1. `conformance/model.go` — un segundo record canónico
 
 ```go
 // Embedding is the canonical record for the blob and transaction clauses. It is
@@ -69,73 +73,74 @@ type Embedding struct {
 }
 ```
 
-with the usual `ModelName`/`Schema`/`Pointers`/`IsNil`/`EncodeFields`/`DecodeFields`
-methods, matching `Widget`'s hand-written style (this package depends on `model`, not
-on `ormc`).
+con los métodos habituales `ModelName`/`Schema`/`Pointers`/`IsNil`/`EncodeFields`/
+`DecodeFields`, siguiendo el estilo escrito a mano de `Widget` (este paquete depende de
+`model`, no de `ormc`).
 
-`model.Vector(4)` requires `webtyp.com/model` at the tag produced by
-https://github.com/webtyp/model/blob/main/docs/PLAN.md — bump it in `go.mod` first.
+`model.Vector(4)` requiere `webtyp.com/model` en el tag que produce
+https://github.com/webtyp/model/blob/main/docs/PLAN.md — subilo en `go.mod` primero.
 
-### 2. `conformance/conformance.go` — four new clauses
+### 2. `conformance/conformance.go` — cuatro cláusulas nuevas
 
-Registered in `Run` after the existing thirteen:
+Registradas en `Run` después de las trece existentes:
 
-| Clause | Asserts |
+| Cláusula | Verifica |
 |---|---|
-| `blob_round_trips_byte_for_byte` | a 16-byte `vec` written and read back compares equal byte for byte, including `0x00` bytes in the middle and a `0xFF` terminator — the two values a string-based backend silently truncates |
-| `blob_null_scans_as_nil` | `loose` left unset reads back as `nil`, not `[]byte{}` — the same rule `null_scans_as_zero` already enforces for scalars |
-| `blob_updates_in_place` | overwriting `vec` with different bytes of the same length leaves no trace of the old value |
-| `batch_insert_is_atomic` | **skipped unless the backend implements `TxExecutor`**: 64 rows created inside one transaction are all visible after `Commit`, and a `Rollback` after 64 creates leaves the table empty |
+| `blob_round_trips_byte_for_byte` | un `vec` de 16 bytes escrito y releído compara igual byte a byte, incluyendo bytes `0x00` en el medio y un terminador `0xFF` — los dos valores que un backend basado en strings trunca en silencio |
+| `blob_null_scans_as_nil` | un `loose` sin asignar se lee como `nil`, no como `[]byte{}` — la misma regla que `null_scans_as_zero` ya impone para escalares |
+| `blob_updates_in_place` | sobrescribir `vec` con bytes distintos del mismo largo no deja rastro del valor anterior |
+| `batch_insert_is_atomic` | **se saltea salvo que el backend implemente `TxExecutor`**: 64 filas creadas dentro de una transacción están todas visibles tras `Commit`, y un `Rollback` tras 64 creates deja la tabla vacía |
 
-The transaction clause is `t.Skip`-ped with an explicit message when the type assertion
-fails, so a backend without transaction support reports "skipped", never a false pass.
+La cláusula de transacción se saltea con `t.Skip` y un mensaje explícito cuando la type
+assertion falla, para que un backend sin soporte de transacciones reporte "salteado", nunca
+un falso positivo.
 
-### 3. `mem/mem.go` — verify, then fix only if needed
+### 3. `mem/mem.go` — verificar, y recién después arreglar si hace falta
 
-`scanInto` delegates to `storage.ScanAny`, which handles `*[]byte`. `dbRow.set` stores
-`any`. So `mem` is expected to pass the blob clauses **unmodified** — run them first and
-only touch `mem` if they fail.
+`scanInto` delega en `storage.ScanAny`, que maneja `*[]byte`. Así que se espera que `mem`
+pase las cláusulas de blob **sin modificación** — corrélas primero y tocá `mem` solo si
+fallan.
 
-`mem` does not implement `TxExecutor` beyond the no-op `BeginTx`/`Commit`/`Rollback`
-already on `engine` (`mem.go:80-85`). Those are stubs: `Rollback` discards nothing.
-Either implement real snapshot semantics (copy the table slice on `BeginTx`, restore on
-`Rollback`) or remove the stubs so the type assertion fails honestly and the clause
-skips. **Remove or implement — do not leave a `Rollback` that lies.** Recommendation:
-implement it; it is ~15 lines and `mem` is the reference backend.
+`mem` no implementa `TxExecutor` más allá de los `BeginTx`/`Commit`/`Rollback` no-op que ya
+están en `engine` (`mem.go:80-85`). Esos son stubs: `Rollback` no descarta nada. O bien
+implementá semántica real de snapshot (copiar el slice de la tabla en `BeginTx`, restaurar
+en `Rollback`), o bien sacá los stubs para que la type assertion falle honestamente y la
+cláusula se saltee. **Sacalo o implementalo — no dejes un `Rollback` que miente.**
+Recomendación: implementalo; son ~15 líneas y `mem` es el backend de referencia.
 
 ### 4. `mock/recorders.go`
 
-If the mock records calls per method, add the transaction methods so a test can assert
-that a batch used one transaction rather than 64.
+Si el mock registra llamadas por método, agregá los métodos de transacción para que un test
+pueda verificar que un lote usó una transacción y no 64.
 
 ## Tests
 
-`tests/mem_conformance_test.go` picks up the new clauses automatically through `Run`.
-Add to `tests/mem_extra_test.go`:
+`tests/mem_conformance_test.go` recoge las cláusulas nuevas automáticamente a través de
+`Run`. Agregar a `tests/mem_extra_test.go`:
 
-| Test | Asserts |
+| Test | Verifica |
 |---|---|
-| `TestScanAny_BlobFromString` | a backend handing back `string` for a BLOB column still scans into `*[]byte` (already supported — this pins it) |
-| `TestScanAny_NilBlob` | NULL → `nil`, not an empty non-nil slice |
-| `TestMem_RollbackDiscards` | only if §3 implements real transactions |
+| `TestScanAny_BlobFromString` | un backend que devuelve `string` para una columna BLOB igual escanea a `*[]byte` (ya soportado — esto lo fija) |
+| `TestScanAny_NilBlob` | NULL → `nil`, no un slice vacío no-nil |
+| `TestMem_RollbackDiscards` | solo si la §3 implementa transacciones reales |
 
-## Acceptance checklist
+## Checklist de aceptación
 
 ```bash
-grep -n "EmbeddingModel" conformance/model.go       # → 1 match
+grep -n "EmbeddingModel" conformance/model.go       # → 1 coincidencia
 grep -c "t.Run(\"blob_" conformance/conformance.go  # → 3
 grep -n "batch_insert_is_atomic" conformance/conformance.go
 go vet ./...
 gotest
 ```
 
-## Downstream note, not this repo's work
+## Nota aguas abajo, que no es trabajo de este repositorio
 
-`sqlt` and `postgres` need a `FieldBlob` → `BLOB` / `BYTEA` DDL mapping before they pass
-the new clauses. If they do not have one, the new clauses will surface it — which is the
-point. File it against those repositories; do not widen this plan.
+`sqlt` y `postgres` necesitan un mapeo DDL de `FieldBlob` → `BLOB` / `BYTEA` antes de pasar
+las cláusulas nuevas. Si no lo tienen, las cláusulas nuevas lo van a sacar a la luz — que es
+justamente el punto. Abrí un issue contra esos repositorios; no ensanches este plan.
 
-Release after the checklist passes; `indexdb` and `vectordb` both depend on the tag:
+Liberar cuando el checklist pase; `indexdb` y `vectordb` dependen ambos del tag:
 
 ```bash
 gopush 'feat: blob and transaction conformance clauses'
