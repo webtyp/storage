@@ -28,10 +28,10 @@ var ExtraDummyModel = model.Definition{
 	},
 }
 
-func (m *ExtraDummy) ModelName() string             { return ExtraDummyModel.Name }
-func (m *ExtraDummy) Schema() []model.Field         { return ExtraDummyModel.Fields }
-func (m *ExtraDummy) Pointers() []any               { return []any{&m.Id, &m.Name, &m.Qty, &m.Active} }
-func (m *ExtraDummy) IsNil() bool                   { return m == nil }
+func (m *ExtraDummy) ModelName() string                { return ExtraDummyModel.Name }
+func (m *ExtraDummy) Schema() []model.Field            { return ExtraDummyModel.Fields }
+func (m *ExtraDummy) Pointers() []any                  { return []any{&m.Id, &m.Name, &m.Qty, &m.Active} }
+func (m *ExtraDummy) IsNil() bool                      { return m == nil }
 func (m *ExtraDummy) EncodeFields(w model.FieldWriter) {}
 func (m *ExtraDummy) DecodeFields(r model.FieldReader) {}
 
@@ -126,12 +126,12 @@ func TestMemExtra(t *testing.T) {
 			{"%bcd%", []string{"2"}},
 			{"ab%de%", []string{"2"}},
 			{"a%b", []string{"3"}},
-			{"ab%de%xy", nil}, // suffix mismatch
-			{"xy%de%gh", nil}, // prefix mismatch
-			{"ab%xy%ef", nil}, // findHelper mismatch
+			{"ab%de%xy", nil},          // suffix mismatch
+			{"xy%de%gh", nil},          // prefix mismatch
+			{"ab%xy%ef", nil},          // findHelper mismatch
 			{"abcdef%", []string{"2"}}, // matches ID 2, triggers len(s) < len(prefix) on ID 1
-			{"%abcdefg", nil}, // hasSuffixHelper len check (len(s) < len(suffix))
-			{"ab%%cd", nil},   // findHelper with empty sub
+			{"%abcdefg", nil},          // hasSuffixHelper len check (len(s) < len(suffix))
+			{"ab%%cd", nil},            // findHelper with empty sub
 		}
 
 		for _, tc := range cases {

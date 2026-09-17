@@ -3,9 +3,9 @@ package conformance
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"testing"
 
+	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/storage"
 )
@@ -16,6 +16,7 @@ import (
 //   - mem:              auto-creates the table on first Create — New just returns mem.New().
 //   - sqlite/postgres:  New runs ddlc.ExportDDL(models) (or ddl.CreateTable) before returning.
 //   - indexdb:          New declares `models` as IndexedDB object stores up front.
+//
 // models are the record types the suite will exercise. Called once per clause → no cross-clause
 // bleed.
 type Factory struct {

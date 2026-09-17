@@ -65,7 +65,7 @@ var EmbeddingModel = model.Definition{
 	Fields: model.Fields{
 		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
 		{Name: "vec", Type: model.Vector(4), NotNull: true}, // 16 bytes
-		{Name: "loose", Type: model.Blob()},                  // nullable, no dimension
+		{Name: "loose", Type: model.Blob()},                 // nullable, no dimension
 	},
 }
 
