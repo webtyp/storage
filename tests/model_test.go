@@ -24,11 +24,17 @@ type boolCell struct {
 	val  bool
 }
 
+type bytesCell struct {
+	name string
+	val  []byte
+}
+
 type dummyWriter struct {
 	model.FieldWriter
 	strings []strCell
 	ints    []intCell
 	bools   []boolCell
+	bytes   []bytesCell
 }
 
 func (d *dummyWriter) String(name, val string) {
@@ -41,6 +47,10 @@ func (d *dummyWriter) Int(name string, val int64) {
 
 func (d *dummyWriter) Bool(name string, val bool) {
 	d.bools = append(d.bools, boolCell{name, val})
+}
+
+func (d *dummyWriter) Bytes(name string, val []byte) {
+	d.bytes = append(d.bytes, bytesCell{name, val})
 }
 
 func (d *dummyWriter) getString(name string) string {
@@ -70,11 +80,21 @@ func (d *dummyWriter) getBool(name string) bool {
 	return false
 }
 
+func (d *dummyWriter) getBytes(name string) []byte {
+	for _, c := range d.bytes {
+		if c.name == name {
+			return c.val
+		}
+	}
+	return nil
+}
+
 type dummyReader struct {
 	model.FieldReader
 	strings []strCell
 	ints    []intCell
 	bools   []boolCell
+	bytes   []bytesCell
 }
 
 func (d *dummyReader) String(name string) (string, bool) {
@@ -102,6 +122,15 @@ func (d *dummyReader) Bool(name string) (bool, bool) {
 		}
 	}
 	return false, false
+}
+
+func (d *dummyReader) Bytes(name string) ([]byte, bool) {
+	for _, c := range d.bytes {
+		if c.name == name {
+			return c.val, true
+		}
+	}
+	return nil, false
 }
 
 func TestWidgetModelExtra(t *testing.T) {
@@ -139,5 +168,47 @@ func TestWidgetModelExtra(t *testing.T) {
 
 	if w2.Id != "w2" || w2.Name != "widget2" || w2.Qty != 20 || w2.Active {
 		t.Errorf("DecodeFields didn't read fields correctly: %+v", w2)
+	}
+}
+
+func TestEmbeddingModelExtra(t *testing.T) {
+	e := &conformance.Embedding{
+		Id:    "e1",
+		Vec:   []byte{1, 2, 3, 4},
+		Loose: []byte("loose"),
+	}
+
+	if e.ModelName() != "conformance_embedding" {
+		t.Errorf("ModelName = %q, want conformance_embedding", e.ModelName())
+	}
+	if len(e.Schema()) != 3 {
+		t.Errorf("Schema len = %d, want 3", len(e.Schema()))
+	}
+	if len(e.Pointers()) != 3 {
+		t.Errorf("Pointers len = %d, want 3", len(e.Pointers()))
+	}
+	if e.IsNil() {
+		t.Error("expected IsNil false")
+	}
+
+	var nilEmb *conformance.Embedding
+	if !nilEmb.IsNil() {
+		t.Error("expected IsNil true for nil Embedding")
+	}
+
+	writer := &dummyWriter{}
+	e.EncodeFields(writer)
+	if writer.getString("id") != "e1" || string(writer.getBytes("vec")) != "\x01\x02\x03\x04" || string(writer.getBytes("loose")) != "loose" {
+		t.Errorf("EncodeFields error: %+v", writer)
+	}
+
+	reader := &dummyReader{
+		strings: []strCell{{"id", "e2"}},
+		bytes:   []bytesCell{{"vec", []byte{5, 6, 7, 8}}, {"loose", []byte("updated")}},
+	}
+	var e2 conformance.Embedding
+	e2.DecodeFields(reader)
+	if e2.Id != "e2" || string(e2.Vec) != "\x05\x06\x07\x08" || string(e2.Loose) != "updated" {
+		t.Errorf("DecodeFields error: %+v", e2)
 	}
 }

@@ -3,8 +3,9 @@ PLAN: "feat: cláusulas de conformance para blobs y transacciones"
 TAG: v0.1.0
 EXECUTOR: unassigned
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 11829055090585832463
+PR: https://github.com/webtyp/storage/pull/4
 ---
 
 > Parte del esfuerzo de búsqueda semántica nativa en el navegador. Índice maestro:

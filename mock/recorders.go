@@ -132,11 +132,13 @@ func (m Model) DecodeFields(r model.FieldReader) { _ = r }
 // TxExecutor records BeginTx calls.
 type TxExecutor struct {
 	Executor
-	Bound      *TxBoundExecutor
-	BeginTxErr error
+	Bound         *TxBoundExecutor
+	BeginTxErr    error
+	BeginTxCalled bool
 }
 
 func (m *TxExecutor) BeginTx() (storage.TxBoundExecutor, error) {
+	m.BeginTxCalled = true
 	if m.BeginTxErr != nil {
 		return nil, m.BeginTxErr
 	}

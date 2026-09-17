@@ -78,11 +78,45 @@ func (e *engine) Compile(q storage.Query, m model.Model) (storage.Plan, error) {
 func (e *engine) Close() error { return nil }
 
 func (e *engine) BeginTx() (storage.TxBoundExecutor, error) {
-	return e, nil
+	return &txEngine{
+		engine:   e,
+		snapshot: cloneTables(e.tables),
+	}, nil
 }
 
-func (e *engine) Commit() error   { return nil }
-func (e *engine) Rollback() error { return nil }
+type txEngine struct {
+	*engine
+	snapshot []dbTable
+}
+
+func (tx *txEngine) Commit() error {
+	tx.snapshot = nil
+	return nil
+}
+
+func (tx *txEngine) Rollback() error {
+	if tx.snapshot != nil {
+		tx.engine.tables = tx.snapshot
+		tx.snapshot = nil
+	}
+	return nil
+}
+
+func cloneTables(tables []dbTable) []dbTable {
+	if tables == nil {
+		return nil
+	}
+	out := make([]dbTable, len(tables))
+	for i, t := range tables {
+		out[i].name = t.name
+		out[i].rows = make([]dbRow, len(t.rows))
+		for j, r := range t.rows {
+			out[i].rows[j] = make(dbRow, len(r))
+			copy(out[i].rows[j], r)
+		}
+	}
+	return out
+}
 
 func (e *engine) Exec(query string, args ...any) error {
 	q := e.lastQ
@@ -491,7 +525,7 @@ var (
 	_ storage.Compiler        = (*engine)(nil)
 	_ storage.Conn            = (*engine)(nil)
 	_ storage.TxExecutor      = (*engine)(nil)
-	_ storage.TxBoundExecutor = (*engine)(nil)
+	_ storage.TxBoundExecutor = (*txEngine)(nil)
 	_ storage.Scanner         = (*memScanner)(nil)
 	_ storage.Rows            = (*memRows)(nil)
 )

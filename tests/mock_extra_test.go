@@ -151,6 +151,9 @@ func TestMockExecutorAndCompiler(t *testing.T) {
 		if tx == nil {
 			t.Fatal("expected tx")
 		}
+		if !txExec.BeginTxCalled {
+			t.Error("expected BeginTxCalled to be true")
+		}
 		if err := tx.Commit(); err != nil {
 			t.Fatal(err)
 		}

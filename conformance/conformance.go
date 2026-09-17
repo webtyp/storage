@@ -1,9 +1,11 @@
 package conformance
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
+	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/storage"
 )
@@ -14,6 +16,7 @@ import (
 //   - mem:              auto-creates the table on first Create — New just returns mem.New().
 //   - sqlite/postgres:  New runs ddlc.ExportDDL(models) (or ddl.CreateTable) before returning.
 //   - indexdb:          New declares `models` as IndexedDB object stores up front.
+//
 // models are the record types the suite will exercise. Called once per clause → no cross-clause
 // bleed.
 type Factory struct {
@@ -38,6 +41,10 @@ func Run(t *testing.T, f Factory) {
 	t.Run("update_changes_matched_rows_only", func(t *testing.T) { updateChangesMatchedOnly(t, f) })
 	t.Run("delete_removes_matched_rows_only", func(t *testing.T) { deleteRemovesMatchedOnly(t, f) })
 	t.Run("null_scans_as_zero", func(t *testing.T) { nullScansAsZero(t, f) })
+	t.Run("blob_round_trips_byte_for_byte", func(t *testing.T) { blobRoundTripsByteForByte(t, f) })
+	t.Run("blob_null_scans_as_nil", func(t *testing.T) { blobNullScansAsNil(t, f) })
+	t.Run("blob_updates_in_place", func(t *testing.T) { blobUpdatesInPlace(t, f) })
+	t.Run("batch_insert_is_atomic", func(t *testing.T) { batchInsertIsAtomic(t, f) })
 }
 
 func setup(t *testing.T, f Factory, seed ...*Widget) storage.Conn {
@@ -360,5 +367,216 @@ func nullScansAsZero(t *testing.T, f Factory) {
 	}
 	if got.Note != "" {
 		t.Errorf("NullScansAsZero: note = %q, want \"\" (a NULL column must scan as the Go zero value)", got.Note)
+	}
+}
+
+func setupEmbedding(t *testing.T, f Factory, seed ...*Embedding) storage.Conn {
+	t.Helper()
+	conn := f.New(t, &Embedding{})
+	for _, e := range seed {
+		if err := createEmbedding(conn, e); err != nil {
+			t.Fatalf("seed createEmbedding(%+v): %v", e, err)
+		}
+	}
+	return conn
+}
+
+func createEmbedding(conn storage.Conn, e *Embedding) error {
+	schema := e.Schema()
+	values := model.ReadValues(schema, e.Pointers())
+	columns := make([]string, len(schema))
+	for i, f := range schema {
+		columns[i] = f.Name
+	}
+	q := storage.Query{Action: storage.ActionCreate, Table: e.ModelName(), Columns: columns, Values: values}
+	plan, err := conn.Compile(q, e)
+	if err != nil {
+		return err
+	}
+	return conn.Exec(plan.Query, plan.Args...)
+}
+
+func readOneEmbedding(conn storage.Conn, e *Embedding, conds ...storage.Condition) error {
+	q := storage.Query{Action: storage.ActionReadOne, Table: e.ModelName(), Conditions: conds, Limit: 1}
+	plan, err := conn.Compile(q, e)
+	if err != nil {
+		return err
+	}
+	return conn.QueryRow(plan.Query, plan.Args...).Scan(e.Pointers()...)
+}
+
+func readAllEmbeddings(conn storage.Conn, e *Embedding, conds []storage.Condition, order []storage.Order, limit, offset int) ([]*Embedding, error) {
+	q := storage.Query{
+		Action: storage.ActionReadAll, Table: e.ModelName(),
+		Conditions: conds, OrderBy: order, Limit: limit, Offset: offset,
+	}
+	plan, err := conn.Compile(q, e)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.Query(plan.Query, plan.Args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Embedding
+	for rows.Next() {
+		var got Embedding
+		if err := rows.Scan(got.Pointers()...); err != nil {
+			return nil, err
+		}
+		out = append(out, &got)
+	}
+	return out, rows.Err()
+}
+
+func updateEmbedding(conn storage.Conn, e *Embedding, conds ...storage.Condition) error {
+	schema := e.Schema()
+	columns := make([]string, len(schema))
+	for i, f := range schema {
+		columns[i] = f.Name
+	}
+	q := storage.Query{
+		Action: storage.ActionUpdate, Table: e.ModelName(),
+		Columns: columns, Values: model.ReadValues(schema, e.Pointers()), Conditions: conds,
+	}
+	plan, err := conn.Compile(q, e)
+	if err != nil {
+		return err
+	}
+	return conn.Exec(plan.Query, plan.Args...)
+}
+
+func blobRoundTripsByteForByte(t *testing.T, f Factory) {
+	vec := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0xFF}
+	conn := setupEmbedding(t, f, &Embedding{Id: "e1", Vec: vec, Loose: []byte("hello")})
+	var got Embedding
+	if err := readOneEmbedding(conn, &got, storage.Eq("id", "e1")); err != nil {
+		t.Fatalf("readOneEmbedding: %v", err)
+	}
+	if !bytes.Equal(got.Vec, vec) {
+		t.Errorf("Vec round-trip mismatch: got %v, want %v", got.Vec, vec)
+	}
+	if !bytes.Equal(got.Loose, []byte("hello")) {
+		t.Errorf("Loose round-trip mismatch: got %v, want %v", got.Loose, []byte("hello"))
+	}
+}
+
+func blobNullScansAsNil(t *testing.T, f Factory) {
+	conn := f.New(t, &Embedding{})
+	e := &Embedding{Id: "e1", Vec: []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}}
+	q := storage.Query{Action: storage.ActionCreate, Table: e.ModelName(), Columns: []string{"id", "vec"}, Values: []any{e.Id, e.Vec}}
+	plan, err := conn.Compile(q, e)
+	if err != nil {
+		t.Fatalf("compile create without loose: %v", err)
+	}
+	if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+		t.Fatalf("exec create without loose: %v", err)
+	}
+	got := Embedding{Loose: []byte("sentinel")}
+	if err := readOneEmbedding(conn, &got, storage.Eq("id", "e1")); err != nil {
+		t.Fatalf("readOneEmbedding: %v", err)
+	}
+	if got.Loose != nil {
+		t.Errorf("blob_null_scans_as_nil: loose = %v, want nil (a NULL blob column must scan as nil)", got.Loose)
+	}
+}
+
+func blobUpdatesInPlace(t *testing.T, f Factory) {
+	vec1 := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0xFF}
+	vec2 := []byte{0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8, 0xF7, 0xF6, 0xF5, 0xF4, 0xF3, 0xF2, 0xF1, 0xF0, 0x00}
+	conn := setupEmbedding(t, f, &Embedding{Id: "e1", Vec: vec1})
+
+	m := &Embedding{Vec: vec2}
+	if err := updateEmbedding(conn, m, storage.Eq("id", "e1")); err != nil {
+		t.Fatalf("updateEmbedding: %v", err)
+	}
+
+	var got Embedding
+	if err := readOneEmbedding(conn, &got, storage.Eq("id", "e1")); err != nil {
+		t.Fatalf("readOneEmbedding: %v", err)
+	}
+	if !bytes.Equal(got.Vec, vec2) {
+		t.Errorf("blob_updates_in_place: got %v, want %v", got.Vec, vec2)
+	}
+}
+
+func batchInsertIsAtomic(t *testing.T, f Factory) {
+	conn := f.New(t, &Embedding{})
+	txExec, ok := conn.(storage.TxExecutor)
+	if !ok {
+		t.Skip("backend does not implement storage.TxExecutor")
+	}
+
+	tx, err := txExec.BeginTx()
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+
+	vec := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
+	for i := 0; i < 64; i++ {
+		e := &Embedding{Id: fmt.Sprintf("e%d", i), Vec: vec}
+		schema := e.Schema()
+		values := model.ReadValues(schema, e.Pointers())
+		columns := make([]string, len(schema))
+		for ci, field := range schema {
+			columns[ci] = field.Name
+		}
+		q := storage.Query{Action: storage.ActionCreate, Table: e.ModelName(), Columns: columns, Values: values}
+		plan, err := conn.Compile(q, e)
+		if err != nil {
+			t.Fatalf("compile create e%d: %v", i, err)
+		}
+		if err := tx.Exec(plan.Query, plan.Args...); err != nil {
+			t.Fatalf("tx.Exec create e%d: %v", i, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	rows, err := readAllEmbeddings(conn, &Embedding{}, nil, nil, 0, 0)
+	if err != nil {
+		t.Fatalf("readAllEmbeddings post-commit: %v", err)
+	}
+	if len(rows) != 64 {
+		t.Fatalf("expected 64 rows after commit, got %d", len(rows))
+	}
+
+	// Now start a second transaction, create 64 more, then rollback.
+	tx2, err := txExec.BeginTx()
+	if err != nil {
+		t.Fatalf("BeginTx tx2: %v", err)
+	}
+
+	for i := 64; i < 128; i++ {
+		e := &Embedding{Id: fmt.Sprintf("e%d", i), Vec: vec}
+		schema := e.Schema()
+		values := model.ReadValues(schema, e.Pointers())
+		columns := make([]string, len(schema))
+		for ci, field := range schema {
+			columns[ci] = field.Name
+		}
+		q := storage.Query{Action: storage.ActionCreate, Table: e.ModelName(), Columns: columns, Values: values}
+		plan, err := conn.Compile(q, e)
+		if err != nil {
+			t.Fatalf("compile create e%d: %v", i, err)
+		}
+		if err := tx2.Exec(plan.Query, plan.Args...); err != nil {
+			t.Fatalf("tx2.Exec create e%d: %v", i, err)
+		}
+	}
+
+	if err := tx2.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	rowsAfterRollback, err := readAllEmbeddings(conn, &Embedding{}, nil, nil, 0, 0)
+	if err != nil {
+		t.Fatalf("readAllEmbeddings post-rollback: %v", err)
+	}
+	if len(rowsAfterRollback) != 64 {
+		t.Errorf("expected 64 rows after rollback, got %d", len(rowsAfterRollback))
 	}
 }
