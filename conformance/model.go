@@ -56,3 +56,46 @@ func (w *Widget) DecodeFields(r model.FieldReader) {
 }
 
 var _ model.Model = (*Widget)(nil)
+
+// Embedding is the canonical record for the blob and transaction clauses. It is
+// separate from Widget on purpose: a backend that cannot carry bytes fails only
+// the blob clauses instead of every clause at once.
+var EmbeddingModel = model.Definition{
+	Name: "conformance_embedding",
+	Fields: model.Fields{
+		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
+		{Name: "vec", Type: model.Vector(4), NotNull: true}, // 16 bytes
+		{Name: "loose", Type: model.Blob()},                  // nullable, no dimension
+	},
+}
+
+type Embedding struct {
+	Id    string
+	Vec   []byte
+	Loose []byte
+}
+
+func (e *Embedding) ModelName() string     { return EmbeddingModel.Name }
+func (e *Embedding) Schema() []model.Field { return EmbeddingModel.Fields }
+func (e *Embedding) Pointers() []any {
+	return []any{&e.Id, &e.Vec, &e.Loose}
+}
+func (e *Embedding) IsNil() bool { return e == nil }
+func (e *Embedding) EncodeFields(wr model.FieldWriter) {
+	wr.String("id", e.Id)
+	wr.Bytes("vec", e.Vec)
+	wr.Bytes("loose", e.Loose)
+}
+func (e *Embedding) DecodeFields(r model.FieldReader) {
+	if v, ok := r.String("id"); ok {
+		e.Id = v
+	}
+	if v, ok := r.Bytes("vec"); ok {
+		e.Vec = v
+	}
+	if v, ok := r.Bytes("loose"); ok {
+		e.Loose = v
+	}
+}
+
+var _ model.Model = (*Embedding)(nil)

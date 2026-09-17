@@ -6,6 +6,7 @@ import (
 
 	"webtyp.com/model"
 	"webtyp.com/storage"
+	"webtyp.com/storage/conformance"
 	"webtyp.com/storage/mem"
 )
 
@@ -645,4 +646,81 @@ func TestMemExtra(t *testing.T) {
 			t.Errorf("expected storage.ErrNoRows, got %v", err)
 		}
 	})
+}
+
+func TestScanAny_BlobFromString(t *testing.T) {
+	var b []byte
+	if err := storage.ScanAny("hello world", &b); err != nil {
+		t.Fatalf("ScanAny string to *[]byte: %v", err)
+	}
+	if string(b) != "hello world" {
+		t.Errorf("got %q, want %q", string(b), "hello world")
+	}
+}
+
+func TestScanAny_NilBlob(t *testing.T) {
+	var b []byte = []byte("sentinel")
+	if err := storage.ScanAny(nil, &b); err != nil {
+		t.Fatalf("ScanAny nil to *[]byte: %v", err)
+	}
+	if b != nil {
+		t.Errorf("got %v, want nil", b)
+	}
+}
+
+func TestMem_RollbackDiscards(t *testing.T) {
+	conn := mem.New()
+	txExec := conn.(storage.TxExecutor)
+
+	e1 := &conformance.Embedding{Id: "e1", Vec: []byte{0x01, 0x02}}
+	q1 := storage.Query{
+		Action:  storage.ActionCreate,
+		Table:   e1.ModelName(),
+		Columns: []string{"id", "vec"},
+		Values:  []any{e1.Id, e1.Vec},
+	}
+	plan1, _ := conn.Compile(q1, e1)
+	if err := conn.Exec(plan1.Query, plan1.Args...); err != nil {
+		t.Fatalf("Exec initial create: %v", err)
+	}
+
+	tx, err := txExec.BeginTx()
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+
+	e2 := &conformance.Embedding{Id: "e2", Vec: []byte{0x03, 0x04}}
+	q2 := storage.Query{
+		Action:  storage.ActionCreate,
+		Table:   e2.ModelName(),
+		Columns: []string{"id", "vec"},
+		Values:  []any{e2.Id, e2.Vec},
+	}
+	plan2, _ := conn.Compile(q2, e2)
+	if err := tx.Exec(plan2.Query, plan2.Args...); err != nil {
+		t.Fatalf("tx.Exec create e2: %v", err)
+	}
+
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+
+	qr := storage.Query{Action: storage.ActionReadAll, Table: e1.ModelName()}
+	planr, _ := conn.Compile(qr, &conformance.Embedding{})
+	rows, err := conn.Query(planr.Query, planr.Args...)
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var got conformance.Embedding
+		rows.Scan(got.Pointers()...)
+		ids = append(ids, got.Id)
+	}
+
+	if len(ids) != 1 || ids[0] != "e1" {
+		t.Errorf("expected only e1 after rollback, got %v", ids)
+	}
 }
