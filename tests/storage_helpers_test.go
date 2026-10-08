@@ -1,9 +1,9 @@
 package tests
 
 import (
-	"errors"
 	"testing"
 
+	"webtyp.com/fmt"
 	"webtyp.com/storage"
 )
 
@@ -175,7 +175,16 @@ func TestScanAny(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	if !errors.Is(storage.ErrNoRows, storage.ErrNoRows) {
-		t.Error("ErrNoRows doesn't match itself")
+	if !storage.IsNoRows(storage.ErrNoRows) {
+		t.Error("IsNoRows(ErrNoRows) should be true")
+	}
+	if storage.IsNoRows(nil) {
+		t.Error("IsNoRows(nil) should be false")
+	}
+	if storage.IsNoRows(fmt.Err("otro")) {
+		t.Error("IsNoRows(fmt.Err(\"otro\")) should be false")
+	}
+	if storage.ErrNoRows.Error() != "no rows" {
+		t.Errorf("ErrNoRows string mismatch: got %q", storage.ErrNoRows.Error())
 	}
 }

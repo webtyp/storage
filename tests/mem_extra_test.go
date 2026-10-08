@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"errors"
 	"testing"
 
 	"webtyp.com/model"
@@ -642,7 +641,7 @@ func TestMemExtra(t *testing.T) {
 
 		var id string
 		err := scanner.Scan(&id)
-		if err == nil || !errors.Is(err, storage.ErrNoRows) {
+		if err == nil || !storage.IsNoRows(err) {
 			t.Errorf("expected storage.ErrNoRows, got %v", err)
 		}
 	})

@@ -2,7 +2,6 @@ package conformance
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 
 	"webtyp.com/fmt"
@@ -150,7 +149,7 @@ func readOneNoMatchIsNotFound(t *testing.T, f Factory) {
 	conn := setup(t, f)
 	var got Widget
 	err := readOne(conn, &got, storage.Eq("id", "nonexistent"))
-	if !errors.Is(err, storage.ErrNoRows) {
+	if !storage.IsNoRows(err) {
 		t.Errorf("expected storage.ErrNoRows, got %v", err)
 	}
 }
@@ -341,7 +340,7 @@ func deleteRemovesMatchedOnly(t *testing.T, f Factory) {
 	}
 	var got1 Widget
 	err := readOne(conn, &got1, storage.Eq("id", "w1"))
-	if !errors.Is(err, storage.ErrNoRows) {
+	if !storage.IsNoRows(err) {
 		t.Errorf("expected w1 to be deleted/not found, got err: %v", err)
 	}
 	var got2 Widget
