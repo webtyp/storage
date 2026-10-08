@@ -2,6 +2,8 @@
 PLAN: "feat(storage): IsNoRows — detect the no-rows sentinel without == between interfaces"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 13794852725539328832
 ---
 
 # Plan — `storage.IsNoRows(err)`
