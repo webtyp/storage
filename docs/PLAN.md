@@ -2,8 +2,9 @@
 PLAN: "feat(storage): IsNoRows — detect the no-rows sentinel without == between interfaces"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 13794852725539328832
+PR: https://github.com/webtyp/storage/pull/5
 ---
 
 # Plan — `storage.IsNoRows(err)`
