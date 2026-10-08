@@ -84,7 +84,7 @@ only representable state. If you're writing a constructor or a `Factory` field, 
 | `query.go` | `Action`, `Order` (+`Asc`/`Desc`), `Query` — the DML value types |
 | `conditions.go` | `Condition` + constructors (`Eq`, `Gt`, `In`, `Or`, `IsNotNull`, …) |
 | `execution_plan.go` | `Plan` — what `Compile` produces and `Exec`/`Query` consumes |
-| `errors.go` | `ErrNoRows` — the sentinel every backend must map its driver's no-rows error to |
+| `errors.go` | `ErrNoRows` — the sentinel every backend must map its driver's no-rows error to; callers detect it with `IsNoRows(err)`, never `==`/`errors.Is` (reflection under TinyGo) |
 | `scan.go` | `ScanAny` — typed value → pointer, used by `storage/mem` and host-side adapters |
 | `conformance/` | Executable DML contract (`Run(t, Factory)`), built on raw `Query` values — no builder |
 | `mem/` | `mem.New() storage.Conn` — functional in-memory reference backend, no map, no driver |

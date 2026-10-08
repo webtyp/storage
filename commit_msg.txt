@@ -1,5 +1,0 @@
-feat(storage): IsNoRows — detect the no-rows sentinel without == between interfaces
-
-Implements `storage.IsNoRows(err)` using type assertions to eliminate
-the need for `reflectlite` in TinyGo WASM builds. Updated tests and
-`conformance` module.

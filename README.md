@@ -103,7 +103,7 @@ err := conn.Exec(plan.Query, plan.Args...)
 plan, _ = conn.Compile(singleQuery, myModel)
 var name string
 err = conn.QueryRow(plan.Query, plan.Args...).Scan(&name)
-if errors.Is(err, storage.ErrNoRows) {
+if storage.IsNoRows(err) { // never == or errors.Is: both cost reflection under TinyGo
 	fmt.Println("No rows matched the criteria")
 }
 ```
