@@ -1,6 +1,8 @@
 package mem
 
 import (
+	"sync"
+
 	"webtyp.com/fmt"
 	"webtyp.com/model"
 	"webtyp.com/storage"
@@ -11,7 +13,7 @@ import (
 // leaf module uses to test round-trips without importing a real driver, and it proves
 // storage/conformance exactly like the real backends do.
 func New() storage.Conn {
-	return &engine{}
+	return &engine{mu: &sync.Mutex{}}
 }
 
 // dbCell is one column/value pair. Rows and tables are plain slices scanned linearly — no Go
@@ -55,10 +57,38 @@ type dbTable struct {
 	rows []dbRow
 }
 
+// engine is safe for concurrent use: mu guards tables. A Plan carries the query it runs
+// (see memPlan), so Compile and Exec calls from different goroutines never mix up.
 type engine struct {
+	mu     *sync.Mutex
 	tables []dbTable
-	lastQ  storage.Query
-	lastM  model.Model
+}
+
+// memPlan is what mem's Compile puts in Plan.Args: the whole query and its model. Exec, Query
+// and QueryRow run exactly the plan they are handed — never "whatever was compiled last",
+// which silently ran the wrong statement whenever a caller compiled a second query before
+// executing the first (a decorator reading the rows a write is about to touch did exactly that).
+type memPlan struct {
+	q storage.Query
+	m model.Model
+}
+
+// memError is the concrete type of this package's errors (no errors package: TinyGo).
+type memError string
+
+func (e memError) Error() string { return string(e) }
+
+// errForeignPlan is returned when Exec/Query/QueryRow receive arguments that did not come from
+// this engine's Compile.
+const errForeignPlan memError = "mem: plan was not produced by mem's Compile"
+
+func planFrom(args []any) (*memPlan, error) {
+	if len(args) == 1 {
+		if p, ok := args[0].(*memPlan); ok {
+			return p, nil
+		}
+	}
+	return nil, errForeignPlan
 }
 
 func (e *engine) tableIndex(name string) int {
@@ -71,13 +101,14 @@ func (e *engine) tableIndex(name string) int {
 }
 
 func (e *engine) Compile(q storage.Query, m model.Model) (storage.Plan, error) {
-	e.lastQ, e.lastM = q, m
-	return storage.Plan{Mode: q.Action, Query: "mem", Args: q.Values}, nil
+	return storage.Plan{Mode: q.Action, Query: "mem", Args: []any{&memPlan{q: q, m: m}}}, nil
 }
 
 func (e *engine) Close() error { return nil }
 
 func (e *engine) BeginTx() (storage.TxBoundExecutor, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return &txEngine{
 		engine:   e,
 		snapshot: cloneTables(e.tables),
@@ -95,6 +126,8 @@ func (tx *txEngine) Commit() error {
 }
 
 func (tx *txEngine) Rollback() error {
+	tx.engine.mu.Lock()
+	defer tx.engine.mu.Unlock()
 	if tx.snapshot != nil {
 		tx.engine.tables = tx.snapshot
 		tx.snapshot = nil
@@ -119,7 +152,13 @@ func cloneTables(tables []dbTable) []dbTable {
 }
 
 func (e *engine) Exec(query string, args ...any) error {
-	q := e.lastQ
+	p, err := planFrom(args)
+	if err != nil {
+		return err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	q := p.q
 	switch q.Action {
 	case storage.ActionCreate:
 		newRow := make(dbRow, 0, len(q.Columns))
@@ -145,7 +184,7 @@ func (e *engine) Exec(query string, args ...any) error {
 		// schema[0] is still the PK — and every write was skipped as if it were
 		// the primary key. Silently: the statement reported success and changed
 		// nothing.
-		schema := e.lastM.Schema()
+		schema := p.m.Schema()
 		for _, row := range e.match(q.Table, q.Conditions) { // match returns rows aliasing storage
 			for i, col := range q.Columns {
 				if i >= len(q.Values) {
@@ -186,18 +225,41 @@ func isPKColumn(schema model.Fields, col string) bool {
 }
 
 func (e *engine) QueryRow(query string, args ...any) storage.Scanner {
-	q := e.lastQ
+	p, err := planFrom(args)
+	if err != nil {
+		return &memScanner{err: err}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	q := p.q
 	rows := applyOffsetLimit(applyOrder(e.match(q.Table, q.Conditions), q.OrderBy), q.Offset, 1)
 	if len(rows) == 0 {
 		return &memScanner{err: storage.ErrNoRows}
 	}
-	return &memScanner{row: rows[0], schema: e.lastM.Schema()}
+	return &memScanner{row: copyRow(rows[0]), schema: p.m.Schema()}
 }
 
 func (e *engine) Query(query string, args ...any) (storage.Rows, error) {
-	q := e.lastQ
+	p, err := planFrom(args)
+	if err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	q := p.q
 	rows := applyOffsetLimit(applyOrder(e.match(q.Table, q.Conditions), q.OrderBy), q.Offset, q.Limit)
-	return &memRows{rows: rows, schema: e.lastM.Schema(), idx: -1}, nil
+	out := make([]dbRow, len(rows))
+	for i, r := range rows {
+		out[i] = copyRow(r) // the caller scans after the lock is released
+	}
+	return &memRows{rows: out, schema: p.m.Schema(), idx: -1}, nil
+}
+
+// copyRow detaches a row from storage so a later Update cannot change what a caller is scanning.
+func copyRow(r dbRow) dbRow {
+	c := make(dbRow, len(r))
+	copy(c, r)
+	return c
 }
 
 func (e *engine) match(table string, conds []storage.Condition) []dbRow {
