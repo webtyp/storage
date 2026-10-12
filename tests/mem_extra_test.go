@@ -723,3 +723,49 @@ func TestMem_RollbackDiscards(t *testing.T) {
 		t.Errorf("expected only e1 after rollback, got %v", ids)
 	}
 }
+
+// Integers above 2^53 (every unix-nanosecond timestamp) must compare exactly. Comparing them
+// through float64 rounds t-100 and t to the same value, so Lt/Eq/In give wrong answers.
+func TestMem_LargeIntegersCompareExactly(t *testing.T) {
+	const t0 = int64(1791785330439800619) // a unix-ns instant in 2026
+	conn := mem.New()
+	for _, d := range []*ExtraDummy{{Id: "before", Qty: t0 - 100}, {Id: "at", Qty: t0}, {Id: "after", Qty: t0 + 100}} {
+		q := storage.Query{Action: storage.ActionCreate, Table: d.ModelName(), Columns: []string{"id", "name", "qty", "active"}, Values: []any{d.Id, d.Name, d.Qty, d.Active}}
+		plan, _ := conn.Compile(q, d)
+		if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+			t.Fatalf("create %s: %v", d.Id, err)
+		}
+	}
+	ids := func(cond storage.Condition) string {
+		q := storage.Query{Action: storage.ActionReadAll, Table: ExtraDummyModel.Name, Columns: []string{"id", "name", "qty", "active"}, Conditions: []storage.Condition{cond}, OrderBy: []storage.Order{storage.Asc("qty")}}
+		plan, _ := conn.Compile(q, &ExtraDummy{})
+		rows, err := conn.Query(plan.Query, plan.Args...)
+		if err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		defer rows.Close()
+		got := ""
+		for rows.Next() {
+			var d ExtraDummy
+			rows.Scan(d.Pointers()...)
+			got += d.Id + " "
+		}
+		return got
+	}
+	for _, c := range []struct {
+		name string
+		cond storage.Condition
+		want string
+	}{
+		{"Lt", storage.Lt("qty", t0), "before "},
+		{"Lte", storage.Lte("qty", t0), "before at "},
+		{"Gt", storage.Gt("qty", t0), "after "},
+		{"Eq", storage.Eq("qty", t0), "at "},
+		{"Neq", storage.Neq("qty", t0), "before after "},
+		{"In", storage.In("qty", []int64{t0}), "at "},
+	} {
+		if got := ids(c.cond); got != c.want {
+			t.Errorf("%s(qty, t0) = %q, want %q", c.name, got, c.want)
+		}
+	}
+}

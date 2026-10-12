@@ -338,22 +338,14 @@ func inSlice(v any, listVal any) bool {
 			}
 		}
 	case []int:
-		vf, ok := toFloat(v)
-		if !ok {
-			return false
-		}
 		for _, it := range l {
-			if vf == float64(it) {
+			if equalAny(v, it) {
 				return true
 			}
 		}
 	case []int64:
-		vf, ok := toFloat(v)
-		if !ok {
-			return false
-		}
 		for _, it := range l {
-			if vf == float64(it) {
+			if equalAny(v, it) {
 				return true
 			}
 		}
@@ -450,6 +442,21 @@ func toStr(v any) string {
 	}
 }
 
+// toInt reports v as an int64 when it is an integer. Integers are compared as integers, never
+// through float64: a float64 holds 53 bits of mantissa, so above 2^53 (every unix-ns timestamp)
+// distinct integers round to the same float and Lt/Eq/In answer wrongly.
+func toInt(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int:
+		return int64(x), true
+	case int32:
+		return int64(x), true
+	case int64:
+		return x, true
+	}
+	return 0, false
+}
+
 func toFloat(v any) (float64, bool) {
 	switch x := v.(type) {
 	case int:
@@ -474,6 +481,11 @@ func equalAny(a, b any) bool {
 		bb, _ := b.(bool)
 		return ab == bb
 	}
+	if ai, aok := toInt(a); aok {
+		if bi, bok := toInt(b); bok {
+			return ai == bi
+		}
+	}
 	if af, aok := toFloat(a); aok {
 		if bf, bok := toFloat(b); bok {
 			return af == bf
@@ -483,6 +495,18 @@ func equalAny(a, b any) bool {
 }
 
 func compareAny(a, b any) int {
+	if ai, aok := toInt(a); aok {
+		if bi, bok := toInt(b); bok {
+			switch {
+			case ai < bi:
+				return -1
+			case ai > bi:
+				return 1
+			default:
+				return 0
+			}
+		}
+	}
 	if af, aok := toFloat(a); aok {
 		if bf, bok := toFloat(b); bok {
 			switch {
