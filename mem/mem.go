@@ -183,7 +183,7 @@ func (e *engine) Exec(query string, args ...any) error {
 					}
 				}
 				if hasPK && pkMatches {
-					return fmt.Err("storage/mem: duplicate primary key")
+					return fmt.Err("storage/mem: duplicate key")
 				}
 			}
 		}
