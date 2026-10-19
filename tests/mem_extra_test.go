@@ -54,6 +54,34 @@ func TestMemExtra(t *testing.T) {
 		}
 	})
 
+	t.Run("Create Duplicate PK returns error", func(t *testing.T) {
+		conn := mem.New()
+		d1 := &ExtraDummy{Id: "pk1", Name: "first"}
+		q1 := storage.Query{
+			Action: storage.ActionCreate, Table: d1.ModelName(),
+			Columns: []string{"id", "name"}, Values: []any{"pk1", "first"},
+		}
+		p1, err := conn.Compile(q1, d1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.Exec(p1.Query, p1.Args...); err != nil {
+			t.Fatalf("first insert failed: %v", err)
+		}
+		d2 := &ExtraDummy{Id: "pk1", Name: "second"}
+		q2 := storage.Query{
+			Action: storage.ActionCreate, Table: d2.ModelName(),
+			Columns: []string{"id", "name"}, Values: []any{"pk1", "second"},
+		}
+		p2, err := conn.Compile(q2, d2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := conn.Exec(p2.Query, p2.Args...); err == nil {
+			t.Fatal("expected duplicate primary key error, got nil")
+		}
+	})
+
 	t.Run("Update/Delete on table not exist", func(t *testing.T) {
 		conn := mem.New()
 		qUpdate := storage.Query{

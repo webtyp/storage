@@ -161,18 +161,37 @@ func (e *engine) Exec(query string, args ...any) error {
 	q := p.q
 	switch q.Action {
 	case storage.ActionCreate:
-		newRow := make(dbRow, 0, len(q.Columns))
-		for i, col := range q.Columns {
-			if i < len(q.Values) {
-				newRow = append(newRow, dbCell{col: col, val: q.Values[i]})
-			}
-		}
 		idx := e.tableIndex(q.Table)
 		if idx == -1 {
 			// Auto-vivifies the table on first insert. This is why the mem Factory in
 			// storage/conformance needs no DDL — it just returns mem.New().
 			e.tables = append(e.tables, dbTable{name: q.Table})
 			idx = len(e.tables) - 1
+		} else if p.m != nil {
+			schema := p.m.Schema()
+			for _, row := range e.tables[idx].rows {
+				pkMatches := true
+				hasPK := false
+				for i, col := range q.Columns {
+					if isPKColumn(schema, col) {
+						hasPK = true
+						val, ok := row.get(col)
+						if !ok || val != q.Values[i] {
+							pkMatches = false
+							break
+						}
+					}
+				}
+				if hasPK && pkMatches {
+					return fmt.Err("storage/mem: duplicate primary key")
+				}
+			}
+		}
+		newRow := make(dbRow, 0, len(q.Columns))
+		for i, col := range q.Columns {
+			if i < len(q.Values) {
+				newRow = append(newRow, dbCell{col: col, val: q.Values[i]})
+			}
 		}
 		e.tables[idx].rows = append(e.tables[idx].rows, newRow)
 	case storage.ActionUpdate:
