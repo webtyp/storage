@@ -42,13 +42,15 @@ func (r dbRow) get(col string) (any, bool) {
 
 // set overwrites an existing column in place. Callers only ever set columns that Create
 // already wrote, so every call takes the "found" branch — there is no append fallback.
-func (r dbRow) set(col string, val any) {
+// with returns the row with col set to val, appending the cell when the row lacks that column.
+func (r dbRow) with(col string, val any) dbRow {
 	for i := range r {
 		if r[i].col == col {
 			r[i].val = val
-			return
+			return r
 		}
 	}
+	return append(r, dbCell{col: col, val: val})
 }
 
 // dbTable is one named table's rows.
@@ -203,8 +205,19 @@ func (e *engine) Exec(query string, args ...any) error {
 		// schema[0] is still the PK — and every write was skipped as if it were
 		// the primary key. Silently: the statement reported success and changed
 		// nothing.
+		//
+		// Rows are written back by index: a column the INSERT left out (orm.Create omits a zero
+		// OmitEmpty field) is appended to the row, which a copy of the row header could never do.
 		schema := p.m.Schema()
-		for _, row := range e.match(q.Table, q.Conditions) { // match returns rows aliasing storage
+		idx := e.tableIndex(q.Table)
+		if idx == -1 {
+			return nil
+		}
+		rows := e.tables[idx].rows
+		for r := range rows {
+			if !matchRow(rows[r], q.Conditions) {
+				continue
+			}
 			for i, col := range q.Columns {
 				if i >= len(q.Values) {
 					continue
@@ -212,7 +225,7 @@ func (e *engine) Exec(query string, args ...any) error {
 				if isPKColumn(schema, col) {
 					continue // do not overwrite PK on update
 				}
-				row.set(col, q.Values[i])
+				rows[r] = rows[r].with(col, q.Values[i])
 			}
 		}
 	case storage.ActionDelete:

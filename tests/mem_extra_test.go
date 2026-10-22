@@ -797,3 +797,51 @@ func TestMem_LargeIntegersCompareExactly(t *testing.T) {
 		}
 	}
 }
+
+// A column left out of the INSERT (orm.Create omits a zero OmitEmpty field) must still be written
+// by a later UPDATE. The row used to keep only the columns it was inserted with, and the UPDATE of
+// any other column reported success and changed nothing.
+func TestMem_UpdateWritesColumnAbsentFromInsert(t *testing.T) {
+	conn := mem.New()
+	d := &ExtraDummy{Id: "pk1", Name: "first"}
+	qc := storage.Query{
+		Action: storage.ActionCreate, Table: d.ModelName(),
+		Columns: []string{"id", "name"}, Values: []any{"pk1", "first"},
+	}
+	pc, _ := conn.Compile(qc, d)
+	if err := conn.Exec(pc.Query, pc.Args...); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	qu := storage.Query{
+		Action: storage.ActionUpdate, Table: d.ModelName(),
+		Columns:    []string{"id", "name", "qty", "active"},
+		Values:     []any{"pk1", "second", int64(7), true},
+		Conditions: []storage.Condition{storage.Eq("id", "pk1")},
+	}
+	pu, err := conn.Compile(qu, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.Exec(pu.Query, pu.Args...); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	qr := storage.Query{Action: storage.ActionReadAll, Table: d.ModelName()}
+	pr, _ := conn.Compile(qr, &ExtraDummy{})
+	rows, err := conn.Query(pr.Query, pr.Args...)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	var got ExtraDummy
+	if !rows.Next() {
+		t.Fatal("row not found")
+	}
+	if err := rows.Scan(got.Pointers()...); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got.Name != "second" || got.Qty != 7 || !got.Active {
+		t.Fatalf("after update = %+v, want name second, qty 7, active true", got)
+	}
+}
