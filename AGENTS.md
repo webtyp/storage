@@ -58,7 +58,7 @@ every backend and every app in the ecosystem — this is the most-imported packa
   §6.3/§6.4/§6.8: the builder is invariant glue written once, not part of what varies per backend).
   Do not add ergonomic sugar here "to make `storage` nicer to use directly" — if it doesn't vary by
   backend, it doesn't belong in the contract.
-- **No DDL.** `CreateTable`/`Sync`/schema management lives in `webtyp/ddl`, a separate repo that
+- **No DDL.** Schema management (`Sync`) lives in `webtyp/ddl`, a separate repo that
   consumes `storage.Conn` + `storage.Compiler`. This package has zero opinions about schema.
 - **No DSN registry (`Open`/`Register`).** A string-keyed lookup that fails at runtime ("unknown
   scheme") is exactly the kind of thing the construction harness forbids (fail at compile time, not
