@@ -140,7 +140,7 @@ func createThenReadOneByPK(t *testing.T, f Factory) {
 	if err := readOne(conn, &got, storage.Eq("id", "w1")); err != nil {
 		t.Fatalf("readOne: %v", err)
 	}
-	if got.Name != "alpha" || got.Qty != 3 || got.Active != true {
+	if got.Name != "alpha" || got.Qty != 3 || !got.Active {
 		t.Errorf("round-trip mismatch: got %+v", got)
 	}
 }
@@ -318,14 +318,14 @@ func updateChangesMatchedOnly(t *testing.T, f Factory) {
 	if err := readOne(conn, &got1, storage.Eq("id", "w1")); err != nil {
 		t.Fatalf("readOne w1: %v", err)
 	}
-	if got1.Name != "updated" || got1.Qty != 99 || got1.Active != true {
+	if got1.Name != "updated" || got1.Qty != 99 || !got1.Active {
 		t.Errorf("w1 was not correctly updated: %+v", got1)
 	}
 	var got2 Widget
 	if err := readOne(conn, &got2, storage.Eq("id", "w2")); err != nil {
 		t.Fatalf("readOne w2: %v", err)
 	}
-	if got2.Name != "beta" || got2.Qty != 2 || got2.Active != false {
+	if got2.Name != "beta" || got2.Qty != 2 || got2.Active {
 		t.Errorf("w2 was modified but shouldn't have been: %+v", got2)
 	}
 }

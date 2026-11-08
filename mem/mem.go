@@ -128,10 +128,10 @@ func (tx *txEngine) Commit() error {
 }
 
 func (tx *txEngine) Rollback() error {
-	tx.engine.mu.Lock()
-	defer tx.engine.mu.Unlock()
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
 	if tx.snapshot != nil {
-		tx.engine.tables = tx.snapshot
+		tx.tables = tx.snapshot
 		tx.snapshot = nil
 	}
 	return nil
@@ -564,6 +564,8 @@ func compareAny(a, b any) int {
 
 // likeMatch supports SQL LIKE with '%' wildcards.
 func likeMatch(s, pattern string) bool {
+	s = fmt.ToLower(s)
+	pattern = fmt.ToLower(pattern)
 	if findHelper(pattern, "%") == -1 {
 		return s == pattern
 	}

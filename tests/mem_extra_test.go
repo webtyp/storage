@@ -494,7 +494,7 @@ func TestMemExtra(t *testing.T) {
 		var gotId string
 		var gotName string
 		var gotQty int64 = 999
-		var gotActive bool = true
+		var gotActive = true
 
 		if err := scanner.Scan(&gotId, &gotName, &gotQty, &gotActive); err != nil {
 			t.Fatal(err)
@@ -686,7 +686,7 @@ func TestScanAny_BlobFromString(t *testing.T) {
 }
 
 func TestScanAny_NilBlob(t *testing.T) {
-	var b []byte = []byte("sentinel")
+	var b = []byte("sentinel")
 	if err := storage.ScanAny(nil, &b); err != nil {
 		t.Fatalf("ScanAny nil to *[]byte: %v", err)
 	}
