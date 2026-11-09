@@ -10,16 +10,21 @@ type Executor struct {
 	ExecutedQueries []string
 	ExecutedArgs    [][]any
 	ReturnExecErr   error
-	ReturnQueryRow  storage.Scanner
-	ReturnQueryRows storage.Rows
-	ReturnQueryErr  error
-	ReturnCloseErr  error
+	// ReturnExecResult is what Exec reports; nil means Affected(0).
+	ReturnExecResult storage.Result
+	ReturnQueryRow   storage.Scanner
+	ReturnQueryRows  storage.Rows
+	ReturnQueryErr   error
+	ReturnCloseErr   error
 }
 
-func (m *Executor) Exec(query string, args ...any) error {
+func (m *Executor) Exec(query string, args ...any) (storage.Result, error) {
 	m.ExecutedQueries = append(m.ExecutedQueries, query)
 	m.ExecutedArgs = append(m.ExecutedArgs, args)
-	return m.ReturnExecErr
+	if m.ReturnExecResult == nil {
+		return storage.Affected(0), m.ReturnExecErr
+	}
+	return m.ReturnExecResult, m.ReturnExecErr
 }
 
 func (m *Executor) QueryRow(query string, args ...any) storage.Scanner {

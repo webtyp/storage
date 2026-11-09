@@ -97,7 +97,7 @@ for rows.Next() {
 ```go
 // For Create/Update/Delete operations
 plan, _ := conn.Compile(insertQuery, myModel)
-err := conn.Exec(plan.Query, plan.Args...)
+result, err := conn.Exec(plan.Query, plan.Args...) // result.RowsAffected(): how many rows changed
 
 // For scanning a single row
 plan, _ = conn.Compile(singleQuery, myModel)
@@ -107,6 +107,14 @@ if storage.IsNoRows(err) { // never == or errors.Is: both cost reflection under 
 	fmt.Println("No rows matched the criteria")
 }
 ```
+
+### Rows affected and duplicate keys
+
+`Exec` returns a `storage.Result`: `result.RowsAffected()` says how many rows an insert, update or delete changed, so a caller can tell «applied» from «nothing matched»
+(`UPDATE … WHERE id = ? AND revision = ?` that changed 0 rows lost a race). Every driver returns `storage.Affected(n)`.
+
+A write that repeats a primary key or a unique column fails with an error every driver wraps with `storage.Duplicate(cause)`; detect it with `storage.IsDuplicate(err)`,
+never with the driver's own error or `errors.Is` (reflection under TinyGo). The conformance suite (`conformance.Run`) checks both for every driver.
 
 ### 5. Transactions
 

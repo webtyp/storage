@@ -12,7 +12,7 @@ import (
 func TestMockExecutorAndCompiler(t *testing.T) {
 	t.Run("Executor basics default", func(t *testing.T) {
 		exec := &mock.Executor{}
-		err := exec.Exec("INSERT INTO foo", 1, 2)
+		_, err := exec.Exec("INSERT INTO foo", 1, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,7 +56,7 @@ func TestMockExecutorAndCompiler(t *testing.T) {
 			ReturnQueryRows: &mock.Rows{ScanErr: errors.New("rows scan error"), ColumnsVal: []string{"a"}, ColumnsErr: errors.New("cols error"), CloseErr: errors.New("close err"), ErrVal: errors.New("err val")},
 		}
 
-		if err := exec.Exec("INSERT"); err == nil || err.Error() != "exec error" {
+		if _, err := exec.Exec("INSERT"); err == nil || err.Error() != "exec error" {
 			t.Errorf("expected exec error, got %v", err)
 		}
 

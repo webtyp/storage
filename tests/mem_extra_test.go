@@ -65,7 +65,7 @@ func TestMemExtra(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := conn.Exec(p1.Query, p1.Args...); err != nil {
+		if _, err := conn.Exec(p1.Query, p1.Args...); err != nil {
 			t.Fatalf("first insert failed: %v", err)
 		}
 		d2 := &ExtraDummy{Id: "pk1", Name: "second"}
@@ -77,7 +77,7 @@ func TestMemExtra(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := conn.Exec(p2.Query, p2.Args...); err == nil {
+		if _, err := conn.Exec(p2.Query, p2.Args...); err == nil {
 			t.Fatal("expected duplicate primary key error, got nil")
 		}
 	})
@@ -89,7 +89,7 @@ func TestMemExtra(t *testing.T) {
 			Table:  "not_exist",
 		}
 		plan, _ := conn.Compile(qUpdate, &ExtraDummy{})
-		if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+		if _, err := conn.Exec(plan.Query, plan.Args...); err != nil {
 			t.Fatal(err)
 		}
 
@@ -98,7 +98,7 @@ func TestMemExtra(t *testing.T) {
 			Table:  "not_exist",
 		}
 		pland, _ := conn.Compile(qDelete, &ExtraDummy{})
-		if err := conn.Exec(pland.Query, pland.Args...); err != nil {
+		if _, err := conn.Exec(pland.Query, pland.Args...); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -707,7 +707,7 @@ func TestMem_RollbackDiscards(t *testing.T) {
 		Values:  []any{e1.Id, e1.Vec},
 	}
 	plan1, _ := conn.Compile(q1, e1)
-	if err := conn.Exec(plan1.Query, plan1.Args...); err != nil {
+	if _, err := conn.Exec(plan1.Query, plan1.Args...); err != nil {
 		t.Fatalf("Exec initial create: %v", err)
 	}
 
@@ -724,7 +724,7 @@ func TestMem_RollbackDiscards(t *testing.T) {
 		Values:  []any{e2.Id, e2.Vec},
 	}
 	plan2, _ := conn.Compile(q2, e2)
-	if err := tx.Exec(plan2.Query, plan2.Args...); err != nil {
+	if _, err := tx.Exec(plan2.Query, plan2.Args...); err != nil {
 		t.Fatalf("tx.Exec create e2: %v", err)
 	}
 
@@ -760,7 +760,7 @@ func TestMem_LargeIntegersCompareExactly(t *testing.T) {
 	for _, d := range []*ExtraDummy{{Id: "before", Qty: t0 - 100}, {Id: "at", Qty: t0}, {Id: "after", Qty: t0 + 100}} {
 		q := storage.Query{Action: storage.ActionCreate, Table: d.ModelName(), Columns: []string{"id", "name", "qty", "active"}, Values: []any{d.Id, d.Name, d.Qty, d.Active}}
 		plan, _ := conn.Compile(q, d)
-		if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+		if _, err := conn.Exec(plan.Query, plan.Args...); err != nil {
 			t.Fatalf("create %s: %v", d.Id, err)
 		}
 	}
@@ -809,7 +809,7 @@ func TestMem_UpdateWritesColumnAbsentFromInsert(t *testing.T) {
 		Columns: []string{"id", "name"}, Values: []any{"pk1", "first"},
 	}
 	pc, _ := conn.Compile(qc, d)
-	if err := conn.Exec(pc.Query, pc.Args...); err != nil {
+	if _, err := conn.Exec(pc.Query, pc.Args...); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 
@@ -823,7 +823,7 @@ func TestMem_UpdateWritesColumnAbsentFromInsert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := conn.Exec(pu.Query, pu.Args...); err != nil {
+	if _, err := conn.Exec(pu.Query, pu.Args...); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 

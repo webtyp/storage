@@ -153,14 +153,15 @@ func cloneTables(tables []dbTable) []dbTable {
 	return out
 }
 
-func (e *engine) Exec(query string, args ...any) error {
+func (e *engine) Exec(query string, args ...any) (storage.Result, error) {
 	p, err := planFrom(args)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	q := p.q
+	var affected int64
 	switch q.Action {
 	case storage.ActionCreate:
 		idx := e.tableIndex(q.Table)
@@ -185,7 +186,7 @@ func (e *engine) Exec(query string, args ...any) error {
 					}
 				}
 				if hasPK && pkMatches {
-					return fmt.Err("storage/mem: duplicate key")
+					return nil, storage.Duplicate(fmt.Err("storage/mem: duplicate key"))
 				}
 			}
 		}
@@ -196,6 +197,7 @@ func (e *engine) Exec(query string, args ...any) error {
 			}
 		}
 		e.tables[idx].rows = append(e.tables[idx].rows, newRow)
+		affected = 1
 	case storage.ActionUpdate:
 		// The PK is skipped by NAME, never by position. This used to index the
 		// schema with the column's own index, on the assumption that a consumer
@@ -211,13 +213,14 @@ func (e *engine) Exec(query string, args ...any) error {
 		schema := p.m.Schema()
 		idx := e.tableIndex(q.Table)
 		if idx == -1 {
-			return nil
+			return storage.Affected(0), nil
 		}
 		rows := e.tables[idx].rows
 		for r := range rows {
 			if !matchRow(rows[r], q.Conditions) {
 				continue
 			}
+			affected++
 			for i, col := range q.Columns {
 				if i >= len(q.Values) {
 					continue
@@ -231,7 +234,7 @@ func (e *engine) Exec(query string, args ...any) error {
 	case storage.ActionDelete:
 		idx := e.tableIndex(q.Table)
 		if idx == -1 {
-			return nil
+			return storage.Affected(0), nil
 		}
 		kept := e.tables[idx].rows[:0:0]
 		for _, row := range e.tables[idx].rows {
@@ -239,9 +242,10 @@ func (e *engine) Exec(query string, args ...any) error {
 				kept = append(kept, row)
 			}
 		}
+		affected = int64(len(e.tables[idx].rows) - len(kept))
 		e.tables[idx].rows = kept
 	}
-	return nil
+	return storage.Affected(affected), nil
 }
 
 // isPKColumn reports whether col names the primary key of schema. A linear

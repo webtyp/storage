@@ -51,7 +51,7 @@ every backend and every app in the ecosystem — this is the most-imported packa
   are responsible for translating `database/sql` semantics (e.g. `sql.ErrNoRows`) into this package's
   sentinels (`storage.ErrNoRows`) — that translation happens in the adapter, never here.
 - **No `reflect`.** All types in this package are plain structs with exported getter methods
-  (`Condition.Field()`, `Order.Column()`, …). Struct tags, if ever relevant, are a build-time (`ormc`)
+  (`Condition.Field()`, `Order.Column()`, …). Struct tags, if ever relevant, are a build-time (`definitionc`)
   concern — not this package's.
 - **No query builder, no `DB` type, no `Where`/`OrderBy` fluent API.** That is `orm`'s job — an
   optional layer built on top of this contract, deliberately kept out of it (see DB_PORT_PROPOSAL.md

@@ -55,7 +55,7 @@ func TestMem_ExecRunsThePlanItIsGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := conn.Exec(write.Query, write.Args...); err != nil {
+	if _, err := conn.Exec(write.Query, write.Args...); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := conn.Query(read.Query, read.Args...)
@@ -83,7 +83,7 @@ func TestMem_ConcurrentCompileExec(t *testing.T) {
 			for i := 0; i < 50; i++ {
 				id := string(rune('a'+g)) + "-" + string(rune('A'+i%26)) + string(rune('A'+i/26))
 				p := createPlan(t, conn, &ExtraDummy{Id: id, Name: id})
-				if err := conn.Exec(p.Query, p.Args...); err != nil {
+				if _, err := conn.Exec(p.Query, p.Args...); err != nil {
 					t.Error(err)
 					return
 				}
@@ -100,7 +100,7 @@ func TestMem_ConcurrentCompileExec(t *testing.T) {
 // silent no-op on whatever was compiled before.
 func TestMem_ExecRejectsForeignPlan(t *testing.T) {
 	conn := mem.New()
-	if err := conn.Exec("SELECT 1"); err == nil {
+	if _, err := conn.Exec("SELECT 1"); err == nil {
 		t.Fatal("Exec with a plan not produced by mem.Compile must fail")
 	}
 }

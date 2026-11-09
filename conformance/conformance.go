@@ -44,13 +44,15 @@ func Run(t *testing.T, f Factory) {
 	t.Run("blob_null_scans_as_nil", func(t *testing.T) { blobNullScansAsNil(t, f) })
 	t.Run("blob_updates_in_place", func(t *testing.T) { blobUpdatesInPlace(t, f) })
 	t.Run("batch_insert_is_atomic", func(t *testing.T) { batchInsertIsAtomic(t, f) })
+	t.Run("exec_reports_rows_affected", func(t *testing.T) { execReportsRowsAffected(t, f) })
+	t.Run("duplicate_primary_key_is_reported", func(t *testing.T) { duplicatePrimaryKeyIsReported(t, f) })
 }
 
 func setup(t *testing.T, f Factory, seed ...*Widget) storage.Conn {
 	t.Helper()
 	conn := f.New(t, &Widget{}) // table already exists & empty — backend set it up, not this suite
 	for _, w := range seed {
-		if err := create(conn, w); err != nil {
+		if _, err := create(conn, w); err != nil {
 			t.Fatalf("seed create(%+v): %v", w, err)
 		}
 	}
@@ -59,7 +61,7 @@ func setup(t *testing.T, f Factory, seed ...*Widget) storage.Conn {
 
 // create mirrors what orm.DB.Create builds, minus the autoincrement-PK-skip branch (Widget's PK
 // is a plain Text, never AutoInc — that branch is orm's concern and is tested there, not here).
-func create(conn storage.Conn, w *Widget) error {
+func create(conn storage.Conn, w *Widget) (storage.Result, error) {
 	schema := w.Schema()
 	values := model.ReadValues(schema, w.Pointers())
 	columns := make([]string, len(schema))
@@ -69,7 +71,7 @@ func create(conn storage.Conn, w *Widget) error {
 	q := storage.Query{Action: storage.ActionCreate, Table: w.ModelName(), Columns: columns, Values: values}
 	plan, err := conn.Compile(q, w)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return conn.Exec(plan.Query, plan.Args...)
 }
@@ -108,7 +110,7 @@ func readAll(conn storage.Conn, w *Widget, conds []storage.Condition, order []st
 	return out, rows.Err()
 }
 
-func update(conn storage.Conn, w *Widget, conds ...storage.Condition) error {
+func update(conn storage.Conn, w *Widget, conds ...storage.Condition) (storage.Result, error) {
 	schema := w.Schema()
 	columns := make([]string, len(schema))
 	for i, f := range schema {
@@ -120,16 +122,16 @@ func update(conn storage.Conn, w *Widget, conds ...storage.Condition) error {
 	}
 	plan, err := conn.Compile(q, w)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return conn.Exec(plan.Query, plan.Args...)
 }
 
-func deleteRow(conn storage.Conn, w *Widget, conds ...storage.Condition) error {
+func deleteRow(conn storage.Conn, w *Widget, conds ...storage.Condition) (storage.Result, error) {
 	q := storage.Query{Action: storage.ActionDelete, Table: w.ModelName(), Conditions: conds}
 	plan, err := conn.Compile(q, w)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	return conn.Exec(plan.Query, plan.Args...)
 }
@@ -311,7 +313,7 @@ func updateChangesMatchedOnly(t *testing.T, f Factory) {
 		&Widget{Id: "w2", Name: "beta", Qty: 2, Active: false},
 	)
 	m := &Widget{Name: "updated", Qty: 99, Active: true}
-	if err := update(conn, m, storage.Eq("id", "w1")); err != nil {
+	if _, err := update(conn, m, storage.Eq("id", "w1")); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	var got1 Widget
@@ -335,7 +337,7 @@ func deleteRemovesMatchedOnly(t *testing.T, f Factory) {
 		&Widget{Id: "w1", Name: "alpha", Qty: 1, Active: true},
 		&Widget{Id: "w2", Name: "beta", Qty: 2, Active: false},
 	)
-	if err := deleteRow(conn, &Widget{}, storage.Eq("id", "w1")); err != nil {
+	if _, err := deleteRow(conn, &Widget{}, storage.Eq("id", "w1")); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	var got1 Widget
@@ -357,7 +359,7 @@ func nullScansAsZero(t *testing.T, f Factory) {
 	if err != nil {
 		t.Fatalf("create without note: %v", err)
 	}
-	if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+	if _, err := conn.Exec(plan.Query, plan.Args...); err != nil {
 		t.Fatalf("exec without note: %v", err)
 	}
 	got := Widget{Note: "sentinel"}
@@ -392,7 +394,8 @@ func createEmbedding(conn storage.Conn, e *Embedding) error {
 	if err != nil {
 		return err
 	}
-	return conn.Exec(plan.Query, plan.Args...)
+	_, err = conn.Exec(plan.Query, plan.Args...)
+	return err
 }
 
 func readOneEmbedding(conn storage.Conn, e *Embedding, conds ...storage.Condition) error {
@@ -443,7 +446,8 @@ func updateEmbedding(conn storage.Conn, e *Embedding, conds ...storage.Condition
 	if err != nil {
 		return err
 	}
-	return conn.Exec(plan.Query, plan.Args...)
+	_, err = conn.Exec(plan.Query, plan.Args...)
+	return err
 }
 
 func blobRoundTripsByteForByte(t *testing.T, f Factory) {
@@ -469,7 +473,7 @@ func blobNullScansAsNil(t *testing.T, f Factory) {
 	if err != nil {
 		t.Fatalf("compile create without loose: %v", err)
 	}
-	if err := conn.Exec(plan.Query, plan.Args...); err != nil {
+	if _, err := conn.Exec(plan.Query, plan.Args...); err != nil {
 		t.Fatalf("exec create without loose: %v", err)
 	}
 	got := Embedding{Loose: []byte("sentinel")}
@@ -526,7 +530,7 @@ func batchInsertIsAtomic(t *testing.T, f Factory) {
 		if err != nil {
 			t.Fatalf("compile create e%d: %v", i, err)
 		}
-		if err := tx.Exec(plan.Query, plan.Args...); err != nil {
+		if _, err := tx.Exec(plan.Query, plan.Args...); err != nil {
 			t.Fatalf("tx.Exec create e%d: %v", i, err)
 		}
 	}
@@ -562,7 +566,7 @@ func batchInsertIsAtomic(t *testing.T, f Factory) {
 		if err != nil {
 			t.Fatalf("compile create e%d: %v", i, err)
 		}
-		if err := tx2.Exec(plan.Query, plan.Args...); err != nil {
+		if _, err := tx2.Exec(plan.Query, plan.Args...); err != nil {
 			t.Fatalf("tx2.Exec create e%d: %v", i, err)
 		}
 	}
@@ -577,5 +581,60 @@ func batchInsertIsAtomic(t *testing.T, f Factory) {
 	}
 	if len(rowsAfterRollback) != 64 {
 		t.Errorf("expected 64 rows after rollback, got %d", len(rowsAfterRollback))
+	}
+}
+
+// execReportsRowsAffected: every write says how many rows it changed, so a conditional update can tell «applied» from «nothing matched».
+func execReportsRowsAffected(t *testing.T, f Factory) {
+	conn := f.New(t, &Widget{})
+	inserted, err := create(conn, &Widget{Id: "w1", Name: "alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := inserted.RowsAffected(); got != 1 {
+		t.Errorf("insert affected %d rows, want 1", got)
+	}
+	if _, err := create(conn, &Widget{Id: "w2", Name: "beta"}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := update(conn, &Widget{Id: "w1", Name: "alpha2"}, storage.Eq("id", "w1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := changed.RowsAffected(); got != 1 {
+		t.Errorf("update of a matching row affected %d rows, want 1", got)
+	}
+	missed, err := update(conn, &Widget{Id: "nope", Name: "x"}, storage.Eq("id", "nope"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := missed.RowsAffected(); got != 0 {
+		t.Errorf("update that matched nothing affected %d rows, want 0", got)
+	}
+	removed, err := deleteRow(conn, &Widget{}, storage.Eq("id", "w2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := removed.RowsAffected(); got != 1 {
+		t.Errorf("delete of a matching row affected %d rows, want 1", got)
+	}
+	none, err := deleteRow(conn, &Widget{}, storage.Eq("id", "nope"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := none.RowsAffected(); got != 0 {
+		t.Errorf("delete that matched nothing affected %d rows, want 0", got)
+	}
+}
+
+// duplicatePrimaryKeyIsReported: writing a primary key twice fails with an error every driver maps to storage.Duplicate.
+func duplicatePrimaryKeyIsReported(t *testing.T, f Factory) {
+	conn := setup(t, f, &Widget{Id: "w1", Name: "alpha"})
+	_, err := create(conn, &Widget{Id: "w1", Name: "again"})
+	if err == nil {
+		t.Fatal("a second insert of the same primary key succeeded")
+	}
+	if !storage.IsDuplicate(err) {
+		t.Errorf("a duplicate primary key must satisfy storage.IsDuplicate, got %v", err)
 	}
 }
