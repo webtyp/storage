@@ -114,7 +114,7 @@ if storage.IsNoRows(err) { // never == or errors.Is: both cost reflection under 
 (`UPDATE … WHERE id = ? AND revision = ?` that changed 0 rows lost a race). Every driver returns `storage.Affected(n)`.
 
 A write that repeats a primary key or a unique column fails with an error every driver wraps with `storage.Duplicate(cause)`; detect it with `storage.IsDuplicate(err)`,
-never with the driver's own error or `errors.Is` (reflection under TinyGo). The conformance suite (`conformance.Run`) checks both for every driver.
+never with the driver's own error or `errors.Is` (reflection under TinyGo). The conformance suite (`conformance.Run`) checks rows affected, a repeated primary key and a repeated unique column for every driver, `storage/mem` included.
 
 ### 5. Transactions
 

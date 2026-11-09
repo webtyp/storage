@@ -99,3 +99,36 @@ func (e *Embedding) DecodeFields(r model.FieldReader) {
 }
 
 var _ model.Model = (*Embedding)(nil)
+
+// CodedModel is the record of the unique-column clause: a primary key and a column whose value may appear in one row only.
+var CodedModel = model.Definition{
+	Name: "conformance_coded",
+	Fields: model.Fields{
+		{Name: "id", Type: model.Text(), DB: &model.FieldDB{PK: true}},
+		{Name: "code", Type: model.Text(), NotNull: true, DB: &model.FieldDB{Unique: true}},
+	},
+}
+
+type Coded struct {
+	Id   string
+	Code string
+}
+
+func (c *Coded) ModelName() string     { return CodedModel.Name }
+func (c *Coded) Schema() []model.Field { return CodedModel.Fields }
+func (c *Coded) Pointers() []any       { return []any{&c.Id, &c.Code} }
+func (c *Coded) IsNil() bool           { return c == nil }
+func (c *Coded) EncodeFields(wr model.FieldWriter) {
+	wr.String("id", c.Id)
+	wr.String("code", c.Code)
+}
+func (c *Coded) DecodeFields(r model.FieldReader) {
+	if v, ok := r.String("id"); ok {
+		c.Id = v
+	}
+	if v, ok := r.String("code"); ok {
+		c.Code = v
+	}
+}
+
+var _ model.Model = (*Coded)(nil)

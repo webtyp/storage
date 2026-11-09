@@ -46,6 +46,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("batch_insert_is_atomic", func(t *testing.T) { batchInsertIsAtomic(t, f) })
 	t.Run("exec_reports_rows_affected", func(t *testing.T) { execReportsRowsAffected(t, f) })
 	t.Run("duplicate_primary_key_is_reported", func(t *testing.T) { duplicatePrimaryKeyIsReported(t, f) })
+	t.Run("duplicate_unique_column_is_reported", func(t *testing.T) { duplicateUniqueColumnIsReported(t, f) })
 }
 
 func setup(t *testing.T, f Factory, seed ...*Widget) storage.Conn {
@@ -636,5 +637,34 @@ func duplicatePrimaryKeyIsReported(t *testing.T, f Factory) {
 	}
 	if !storage.IsDuplicate(err) {
 		t.Errorf("a duplicate primary key must satisfy storage.IsDuplicate, got %v", err)
+	}
+}
+
+// duplicateUniqueColumnIsReported: a value repeated in a unique column fails with an error every driver maps to storage.Duplicate.
+func duplicateUniqueColumnIsReported(t *testing.T, f Factory) {
+	conn := f.New(t, &Coded{})
+	insert := func(row *Coded) error {
+		schema := row.Schema()
+		columns := make([]string, len(schema))
+		for i, field := range schema {
+			columns[i] = field.Name
+		}
+		q := storage.Query{Action: storage.ActionCreate, Table: row.ModelName(), Columns: columns, Values: model.ReadValues(schema, row.Pointers())}
+		plan, err := conn.Compile(q, row)
+		if err != nil {
+			return err
+		}
+		_, err = conn.Exec(plan.Query, plan.Args...)
+		return err
+	}
+	if err := insert(&Coded{Id: "c1", Code: "same"}); err != nil {
+		t.Fatal(err)
+	}
+	err := insert(&Coded{Id: "c2", Code: "same"})
+	if err == nil {
+		t.Fatal("a second row with the same value in a unique column was accepted")
+	}
+	if !storage.IsDuplicate(err) {
+		t.Errorf("a repeated unique value must satisfy storage.IsDuplicate, got %v", err)
 	}
 }

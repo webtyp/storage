@@ -189,6 +189,16 @@ func (e *engine) Exec(query string, args ...any) (storage.Result, error) {
 					return nil, storage.Duplicate(fmt.Err("storage/mem: duplicate key"))
 				}
 			}
+			for i, col := range q.Columns {
+				if !isUniqueColumn(schema, col) {
+					continue
+				}
+				for _, row := range e.tables[idx].rows {
+					if val, ok := row.get(col); ok && val == q.Values[i] {
+						return nil, storage.Duplicate(fmt.Err("storage/mem: duplicate value in", col))
+					}
+				}
+			}
 		}
 		newRow := make(dbRow, 0, len(q.Columns))
 		for i, col := range q.Columns {
@@ -246,6 +256,16 @@ func (e *engine) Exec(query string, args ...any) (storage.Result, error) {
 		e.tables[idx].rows = kept
 	}
 	return storage.Affected(affected), nil
+}
+
+// isUniqueColumn reports whether col is declared unique in schema (a linear scan, no map: see isPKColumn).
+func isUniqueColumn(schema model.Fields, col string) bool {
+	for _, f := range schema {
+		if f.Name == col {
+			return f.IsUnique()
+		}
+	}
+	return false
 }
 
 // isPKColumn reports whether col names the primary key of schema. A linear
