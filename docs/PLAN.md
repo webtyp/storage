@@ -2,8 +2,10 @@
 PLAN: "feat: storage.ILike — a text match that ignores case, guaranteed by the conformance suite of every backend"
 EXECUTOR: jules
 REVIEWER: none
-STATUS: running
+STATUS: review
 SESSION: 4940575217866102135
+PR: https://github.com/webtyp/storage/pull/6
+REVIEWED_COMMIT: bd65f21725d9ef27a2d0077f9fb0a181ebdabe85
 ---
 
 > Read AGENTS.md at the repo root before any change.

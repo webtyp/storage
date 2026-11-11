@@ -48,6 +48,14 @@ func Like(field string, value any) Condition {
 	return Condition{field: field, operator: "LIKE", value: value, logic: "AND"}
 }
 
+// ILike creates a condition that matches a pattern ignoring upper and lower case ("%an%" finds "Ana" and "ana"). Every
+// backend honours it (the conformance suite checks it); Like does not promise that.
+//
+//	storage.ILike("name", "%"+text+"%")
+func ILike(field string, value any) Condition {
+	return Condition{field: field, operator: "ILIKE", value: value, logic: "AND"}
+}
+
 // In creates a condition for checking if a value is in a list of values.
 func In(field string, value any) Condition {
 	return Condition{field: field, operator: "IN", value: value, logic: "AND"}

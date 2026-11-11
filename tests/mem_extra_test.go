@@ -845,3 +845,10 @@ func TestMem_UpdateWritesColumnAbsentFromInsert(t *testing.T) {
 		t.Fatalf("after update = %+v, want name second, qty 7, active true", got)
 	}
 }
+
+func TestILike_ConditionShape(t *testing.T) {
+	c := storage.ILike("name", "%an%")
+	if c.Operator() != "ILIKE" || c.Field() != "name" || c.Logic() != "AND" {
+		t.Fatalf("unexpected condition %+v", c)
+	}
+}
