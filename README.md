@@ -56,6 +56,7 @@ Available conditions constructors:
 - `storage.Lt(field, value)`
 - `storage.Lte(field, value)`
 - `storage.Like(field, pattern)`
+- `storage.ILike(field, pattern)` (`ILike` ignores case on every backend; `Like` does not promise it)
 - `storage.In(field, slice)`
 - `storage.Or(condition)` (wraps an existing condition with OR logic)
 - `storage.IsNotNull(field)`

@@ -37,6 +37,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("read_all_applies_limit_and_offset", func(t *testing.T) { readAllLimitOffset(t, f) })
 	t.Run("comparison_operators_filter", func(t *testing.T) { comparisonOperatorsFilter(t, f) })
 	t.Run("in_operator_filters", func(t *testing.T) { inOperatorFilters(t, f) })
+	t.Run("ilike_ignores_case", func(t *testing.T) { ilikeIgnoresCase(t, f) })
 	t.Run("update_changes_matched_rows_only", func(t *testing.T) { updateChangesMatchedOnly(t, f) })
 	t.Run("delete_removes_matched_rows_only", func(t *testing.T) { deleteRemovesMatchedOnly(t, f) })
 	t.Run("null_scans_as_zero", func(t *testing.T) { nullScansAsZero(t, f) })
@@ -290,6 +291,25 @@ func comparisonOperatorsFilter(t *testing.T, f Factory) {
 				break
 			}
 		}
+	}
+}
+
+func ilikeIgnoresCase(t *testing.T, f Factory) {
+	conn := setup(t, f,
+		&Widget{Id: "a", Name: "Ana", Qty: 1, Active: true},
+		&Widget{Id: "b", Name: "ana maría", Qty: 2, Active: true},
+		&Widget{Id: "c", Name: "Bob", Qty: 3, Active: true},
+	)
+	got, err := readAll(conn, &Widget{}, []storage.Condition{storage.ILike("name", "%AN%")}, nil, 0, 0)
+	if err != nil {
+		t.Fatalf("readAll: %v", err)
+	}
+	if len(got) != 2 || got[0].Id != "a" || got[1].Id != "b" {
+		t.Errorf("ILike %%AN%% must find Ana and ana maría whatever the case; got %+v", got)
+	}
+	none, err := readAll(conn, &Widget{}, []storage.Condition{storage.ILike("name", "%zzz%")}, nil, 0, 0)
+	if err != nil || len(none) != 0 {
+		t.Errorf("ILike with no match: got %+v, %v", none, err)
 	}
 }
 

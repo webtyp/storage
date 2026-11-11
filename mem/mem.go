@@ -357,6 +357,8 @@ func evalCond(row dbRow, c storage.Condition) bool {
 		return inSlice(v, c.Value())
 	case "LIKE":
 		return likeMatch(toStr(v), toStr(c.Value()))
+	case "ILIKE":
+		return likeMatch(toStr(v), toStr(c.Value()))
 	case "=":
 		return equalAny(v, c.Value())
 	case "!=":
