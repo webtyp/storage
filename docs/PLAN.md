@@ -2,6 +2,8 @@
 PLAN: "feat: storage.ILike — a text match that ignores case, guaranteed by the conformance suite of every backend"
 EXECUTOR: jules
 REVIEWER: none
+STATUS: running
+SESSION: 4940575217866102135
 ---
 
 > Read AGENTS.md at the repo root before any change.
