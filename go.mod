@@ -3,6 +3,6 @@ module webtyp.com/storage
 go 1.25.2
 
 require (
-	webtyp.com/fmt v1.0.1
+	webtyp.com/fmt v1.0.2
 	webtyp.com/model v0.2.19
 )
