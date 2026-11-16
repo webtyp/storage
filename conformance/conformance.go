@@ -30,6 +30,7 @@ func Run(t *testing.T, f Factory) {
 	t.Run("create_then_read_one_by_pk", func(t *testing.T) { createThenReadOneByPK(t, f) })
 	t.Run("read_one_no_match_is_not_found", func(t *testing.T) { readOneNoMatchIsNotFound(t, f) })
 	t.Run("read_all_returns_every_row", func(t *testing.T) { readAllReturnsEveryRow(t, f) })
+	t.Run("read_of_chosen_columns_returns_them_in_order", func(t *testing.T) { readOfChosenColumns(t, f) })
 	t.Run("read_all_filters_by_eq", func(t *testing.T) { readAllFiltersByEq(t, f) })
 	t.Run("read_all_ands_two_conditions", func(t *testing.T) { readAllAndsTwoConditions(t, f) })
 	t.Run("read_all_ors_conditions", func(t *testing.T) { readAllOrsConditions(t, f) })
@@ -686,5 +687,31 @@ func duplicateUniqueColumnIsReported(t *testing.T, f Factory) {
 	}
 	if !storage.IsDuplicate(err) {
 		t.Errorf("a repeated unique value must satisfy storage.IsDuplicate, got %v", err)
+	}
+}
+
+// readOfChosenColumns: a read that names its columns returns exactly those, in that order — never the model's schema
+// order (storage.RewriteTextSearch and ddl's probes read a few columns of a table).
+func readOfChosenColumns(t *testing.T, f Factory) {
+	conn := setup(t, f, &Widget{Id: "w1", Name: "alpha", Qty: 3, Active: true, Note: "n1"})
+	q := storage.Query{Action: storage.ActionReadAll, Table: WidgetModel.Name, Columns: []string{"note", "id"}, Conditions: []storage.Condition{storage.Eq("id", "w1")}}
+	plan, err := conn.Compile(q, &Widget{})
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	rows, err := conn.Query(plan.Query, plan.Args...)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		t.Fatal("no row")
+	}
+	var note, id string
+	if err := rows.Scan(&note, &id); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if note != "n1" || id != "w1" {
+		t.Errorf("got note=%q id=%q, want note=n1 id=w1", note, id)
 	}
 }

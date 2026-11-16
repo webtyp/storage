@@ -22,3 +22,6 @@
 | [TestErrors](../tests/storage_helpers_test.go) | rule |
 | [TestOrder](../tests/storage_helpers_test.go) | rule |
 | [TestScanAny](../tests/storage_helpers_test.go) | rule |
+| [TestTextSearch_RewriteFromStoredRow](../tests/text_search_test.go) | Rewrites a row's text_search from its stored values, in search form. |
+| [TestTextSearch_RewriteOnlyMatchingRows](../tests/text_search_test.go) | Rows that do not match the conditions keep their text_search. |
+| [TestTextSearch_RewriteMixesNewValuesWithStoredOnes](../tests/text_search_test.go) | Fields being updated use the new value, the others the stored one. |

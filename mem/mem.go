@@ -292,7 +292,7 @@ func (e *engine) QueryRow(query string, args ...any) storage.Scanner {
 	if len(rows) == 0 {
 		return &memScanner{err: storage.ErrNoRows}
 	}
-	return &memScanner{row: copyRow(rows[0]), schema: p.m.Schema()}
+	return &memScanner{row: copyRow(rows[0]), columns: readColumns(q, p.m)}
 }
 
 func (e *engine) Query(query string, args ...any) (storage.Rows, error) {
@@ -308,7 +308,7 @@ func (e *engine) Query(query string, args ...any) (storage.Rows, error) {
 	for i, r := range rows {
 		out[i] = copyRow(r) // the caller scans after the lock is released
 	}
-	return &memRows{rows: out, schema: p.m.Schema(), idx: -1}, nil
+	return &memRows{rows: out, columns: readColumns(q, p.m), idx: -1}, nil
 }
 
 // copyRow detaches a row from storage so a later Update cannot change what a caller is scanning.
@@ -446,42 +446,49 @@ func applyOffsetLimit(rows []dbRow, offset, limit int) []dbRow {
 }
 
 type memScanner struct {
-	row    dbRow
-	schema []model.Field
-	err    error
+	row     dbRow
+	columns []string
+	err     error
 }
 
 func (s *memScanner) Scan(dest ...any) error {
 	if s.err != nil {
 		return s.err
 	}
-	return scanInto(s.row, s.schema, dest)
+	return scanInto(s.row, s.columns, dest)
 }
 
 type memRows struct {
-	rows   []dbRow
-	schema []model.Field
-	idx    int
+	rows    []dbRow
+	columns []string
+	idx     int
 }
 
-func (r *memRows) Next() bool             { r.idx++; return r.idx < len(r.rows) }
-func (r *memRows) Scan(dest ...any) error { return scanInto(r.rows[r.idx], r.schema, dest) }
-func (r *memRows) Columns() ([]string, error) {
-	cols := make([]string, len(r.schema))
-	for i, f := range r.schema {
+func (r *memRows) Next() bool                 { r.idx++; return r.idx < len(r.rows) }
+func (r *memRows) Scan(dest ...any) error     { return scanInto(r.rows[r.idx], r.columns, dest) }
+func (r *memRows) Columns() ([]string, error) { return r.columns, nil }
+func (r *memRows) Close() error               { return nil }
+func (r *memRows) Err() error                 { return nil }
+
+// readColumns is what a read returns, in order: the columns the query names, or the model's schema when it names none.
+func readColumns(q storage.Query, m model.Model) []string {
+	if len(q.Columns) > 0 {
+		return q.Columns
+	}
+	schema := m.Schema()
+	cols := make([]string, len(schema))
+	for i, f := range schema {
 		cols[i] = f.Name
 	}
-	return cols, nil
+	return cols
 }
-func (r *memRows) Close() error { return nil }
-func (r *memRows) Err() error   { return nil }
 
-func scanInto(row dbRow, schema []model.Field, dest []any) error {
-	for i, f := range schema {
+func scanInto(row dbRow, columns []string, dest []any) error {
+	for i, col := range columns {
 		if i >= len(dest) {
 			break
 		}
-		v, _ := row.get(f.Name)
+		v, _ := row.get(col)
 		if err := storage.ScanAny(v, dest[i]); err != nil {
 			return err
 		}
